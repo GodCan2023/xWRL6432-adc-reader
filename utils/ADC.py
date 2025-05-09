@@ -49,12 +49,7 @@ class CMD(Enum):
 CONFIG_HEADER = '5aa5'
 CONFIG_STATUS = '0000'
 CONFIG_FOOTER = 'aaee'
-ADC_PARAMS = {'chirps': 128,  # 32
-              'rx': 4,
-              'tx': 3,
-              'samples': 128,
-              'IQ': 2,
-              'bytes': 2}
+
 # STATIC
 MAX_PACKET_SIZE = 4096
 BYTES_IN_PACKET = 1456
