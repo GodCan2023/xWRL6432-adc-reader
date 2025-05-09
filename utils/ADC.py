@@ -9,6 +9,13 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ==============================================================================
+# ------------------------------------------------------------------------------
+# Modified by Leon Braungardt on 2025-05-09:
+#  - Converted static ADC constants (ADC_PARAMS) to dynamic constructor parameters
+#  - Converted ADC_PARAMS "IQ" param (int) to "cmplx_valued" (bool)
+#  - Moved calculation of UDP packet / frame variables which were based on ADC 
+#       constants (ADC_PARAMS) to read() function
+# ------------------------------------------------------------------------------
 
 import codecs
 import socket
@@ -51,15 +58,6 @@ ADC_PARAMS = {'chirps': 128,  # 32
 # STATIC
 MAX_PACKET_SIZE = 4096
 BYTES_IN_PACKET = 1456
-# DYNAMIC
-BYTES_IN_FRAME = (ADC_PARAMS['chirps'] * ADC_PARAMS['rx'] * ADC_PARAMS['tx'] *
-                  ADC_PARAMS['IQ'] * ADC_PARAMS['samples'] * ADC_PARAMS['bytes'])
-BYTES_IN_FRAME_CLIPPED = (BYTES_IN_FRAME // BYTES_IN_PACKET) * BYTES_IN_PACKET
-PACKETS_IN_FRAME = BYTES_IN_FRAME / BYTES_IN_PACKET
-PACKETS_IN_FRAME_CLIPPED = BYTES_IN_FRAME // BYTES_IN_PACKET
-UINT16_IN_PACKET = BYTES_IN_PACKET // 2
-UINT16_IN_FRAME = BYTES_IN_FRAME // 2
-
 
 class DCA1000:
     """Software interface to the DCA1000 EVM board via ethernet.
@@ -85,13 +83,24 @@ class DCA1000:
 
     """
 
-    def __init__(self, static_ip='192.168.33.30', adc_ip='192.168.33.180',
+    def __init__(self,
+                 num_chirp_loops: int,
+                 num_rx_ant: int,
+                 num_tx_ant: int,
+                 num_adc_samples: int,
+                 num_bytes_per_sample: int,
+                 cmplx_valued: bool = False,
+                 static_ip='192.168.33.30', adc_ip='192.168.33.180',
                  data_port=4098, config_port=4096):
         # Save network data
         # self.static_ip = static_ip
         # self.adc_ip = adc_ip
         # self.data_port = data_port
         # self.config_port = config_port
+
+        # Calculate bytes per frame
+        self.bytes_in_frame = num_chirp_loops * num_rx_ant * num_tx_ant * (2 if cmplx_valued else 1) *
+                            num_adc_samples * num_bytes_per_sample
 
         # Create configuration and data destinations
         self.cfg_dest = (adc_ip, config_port)
@@ -169,15 +178,22 @@ class DCA1000:
         # Configure
         self.data_socket.settimeout(timeout)
 
+        # Calculate neccessary values for frame receive via UDP
+        bytes_in_frame_clipped = (self.bytes_in_frame // BYTES_IN_PACKET) * BYTES_IN_PACKET
+        packets_in_frame = self.bytes_in_frame / BYTES_IN_PACKET
+        packets_in_frame_clipped = self.bytes_in_frame // BYTES_IN_PACKET
+        uint16_in_packet = BYTES_IN_PACKET // 2
+        uint16_in_frame = self.bytes_in_frame // 2
+
         # Frame buffer
-        ret_frame = np.zeros(UINT16_IN_FRAME, dtype=np.uint16)
+        ret_frame = np.zeros(uint16_in_frame, dtype=np.uint16)
 
         # Wait for start of next frame
         while True:
             packet_num, byte_count, packet_data = self._read_data_packet()
-            if byte_count % BYTES_IN_FRAME_CLIPPED == 0:
+            if byte_count % bytes_in_frame_clipped == 0:
                 packets_read = 1
-                ret_frame[0:UINT16_IN_PACKET] = packet_data
+                ret_frame[0:uint16_in_packet] = packet_data
                 break
 
         # Read in the rest of the frame            
@@ -185,17 +201,17 @@ class DCA1000:
             packet_num, byte_count, packet_data = self._read_data_packet()
             packets_read += 1
 
-            if byte_count % BYTES_IN_FRAME_CLIPPED == 0:
-                self.lost_packets = PACKETS_IN_FRAME_CLIPPED - packets_read
+            if byte_count % bytes_in_frame_clipped == 0:
+                self.lost_packets = packets_in_frame_clipped - packets_read
                 return ret_frame
 
-            curr_idx = ((packet_num - 1) % PACKETS_IN_FRAME_CLIPPED)
+            curr_idx = ((packet_num - 1) % packets_in_frame_clipped)
             try:
-                ret_frame[curr_idx * UINT16_IN_PACKET:(curr_idx + 1) * UINT16_IN_PACKET] = packet_data
+                ret_frame[curr_idx * uint16_in_packet:(curr_idx + 1) * uint16_in_packet] = packet_data
             except:
                 pass
 
-            if packets_read > PACKETS_IN_FRAME_CLIPPED:
+            if packets_read > packets_in_frame_clipped:
                 packets_read = 0
 
     def _send_command(self, cmd, length='0000', body='', timeout=1):
