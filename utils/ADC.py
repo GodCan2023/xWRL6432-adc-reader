@@ -19,7 +19,8 @@
 #       replace mmWave studio
 #  - Add comment to CONFIG_PACKET_DATA
 #  - Add reset() function for resetting the FPGA
-#
+#  - Add start() function for starting ADC data capture
+#  - Add stop() function for stopping ADC data capture
 # ------------------------------------------------------------------------------
 
 import codecs
@@ -150,7 +151,8 @@ class DCA1000:
         # CONFIG_FPGA_GEN_CMD_CODE
         # Set FPGA config, equivalent to captureCardModeCfg(1, 1, 1, 2, 1, 25)
         # Parameters can be found on page 36 in:
-        # ti/mmwave_studio_04_01_00_06/mmWaveStudio/ReferenceCode/DCA1000/Docs/TI_DCA1000EVM_CLI_Software_DeveloperGuide.pdf
+        # ti/mmwave_studio_04_01_00_06/mmWaveStudio/ReferenceCode/DCA1000/Docs/
+        #       TI_DCA1000EVM_CLI_Software_DeveloperGuide.pdf
         #   0x01: Logging Mode:         raw
         #   0x01: Num LVDS lanes:       4
         #   0x01: Data Transfer Mode:   LVDS
@@ -175,8 +177,34 @@ class DCA1000:
             None
         """
         # RESET_FPGA_CMD_CODE
+        # Page 42 in ti/mmwave_studio_04_01_00_06/mmWaveStudio/ReferenceCode/DCA1000/Docs/
+        #       TI_DCA1000EVM_CLI_Software_DeveloperGuide.pdf
         # 5a a5 01 00 00 00 aa ee
         print(self._send_command(CMD.RESET_FPGA_CMD_CODE))
+
+    def start(self):
+        """Starts the FPGA ADC data recording
+
+        Returns:
+            None
+        """
+        # RECORD_START_CMD_CODE
+        # Page 47 in ti/mmwave_studio_04_01_00_06/mmWaveStudio/ReferenceCode/DCA1000/Docs/
+        #       TI_DCA1000EVM_CLI_Software_DeveloperGuide.pdf
+        # 5a a5 05 00 00 00 aa ee
+        print(self._send_command(CMD.RECORD_START_CMD_CODE))
+
+    def stop(self):
+        """Stops the FPGA ADC data recording
+
+        Returns:
+            None
+        """
+        # RECORD_STOP_CMD_CODE
+        # Page 53 in ti/mmwave_studio_04_01_00_06/mmWaveStudio/ReferenceCode/DCA1000/Docs/
+        #       TI_DCA1000EVM_CLI_Software_DeveloperGuide.pdf
+        # 5a a5 06 00 00 00 aa ee
+        print(self._send_command(CMD.RECORD_STOP_CMD_CODE))
 
     def close(self):
         """Closes the sockets that are used for receiving and sending data
