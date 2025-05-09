@@ -15,6 +15,11 @@
 #  - Converted ADC_PARAMS "IQ" param (int) to "cmplx_valued" (bool)
 #  - Moved calculation of UDP packet / frame variables which were based on ADC 
 #       constants (ADC_PARAMS) to read() function
+#  - Replaced parameters of CONFIG_FPGA_GEN to match xWRL6432 and in order to
+#       replace mmWave studio
+#  - Add comment to CONFIG_PACKET_DATA
+#  - Add reset() function for resetting the FPGA
+#
 # ------------------------------------------------------------------------------
 
 import codecs
@@ -143,12 +148,35 @@ class DCA1000:
         print(self._send_command(CMD.READ_FPGA_VERSION_CMD_CODE))
 
         # CONFIG_FPGA_GEN_CMD_CODE
-        # 5a a5 03 00 06 00 01 02 01 02 03 1e aa ee
-        print(self._send_command(CMD.CONFIG_FPGA_GEN_CMD_CODE, '0600', 'c005350c0000'))
+        # Set FPGA config, equivalent to captureCardModeCfg(1, 1, 1, 2, 1, 25)
+        # Parameters can be found on page 36 in:
+        # ti/mmwave_studio_04_01_00_06/mmWaveStudio/ReferenceCode/DCA1000/Docs/TI_DCA1000EVM_CLI_Software_DeveloperGuide.pdf
+        #   0x01: Logging Mode:         raw
+        #   0x01: Num LVDS lanes:       4
+        #   0x01: Data Transfer Mode:   LVDS
+        #   0x02: Data Capture Mode:    Ethernet
+        #   0x01: Data Format Mode:     12-Bit
+        #   0x19: Packet delay in us:   25
+        # 5a a5 03 00 06 00 01 01 01 02 01 19 aa ee
+        print(self._send_command(CMD.CONFIG_FPGA_GEN_CMD_CODE, '0600', '0x010101020119'))
 
-        # CONFIG_PACKET_DATA_CMD_CODE 
+        # CONFIG_PACKET_DATA_CMD_CODE
+        # set UDP params (CONFIG_PACKET_DATA_CMD_CODE), seems to be LE
+        # source: https://e2e.ti.com/support/sensors-group/sensors/f/sensors-forum/702269/dca1000evm-expected-packet-loss-rate
+        #   0x05c0: Packet Size (UDP payload):  1472
+        #   0x0c35: Packet Delay:               3125 (API value for 25us)
         # 5a a5 0b 00 06 00 c0 05 35 0c 00 00 aa ee
         print(self._send_command(CMD.CONFIG_PACKET_DATA_CMD_CODE, '0600', 'c005350c0000'))
+    
+    def reset(self):
+        """Resets the FPGA
+
+        Returns:
+            None
+        """
+        # RESET_FPGA_CMD_CODE
+        # 5a a5 01 00 00 00 aa ee
+        print(self._send_command(CMD.RESET_FPGA_CMD_CODE))
 
     def close(self):
         """Closes the sockets that are used for receiving and sending data
