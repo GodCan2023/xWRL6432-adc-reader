@@ -89,7 +89,7 @@ class DCA1000:
                  num_rx_ant: int,
                  num_tx_ant: int,
                  num_adc_samples: int,
-                 num_bytes_per_sample: int,
+                 num_bytes_per_sample: int = 2,
                  cmplx_valued: bool = False,
                  static_ip='192.168.33.30', adc_ip='192.168.33.180',
                  data_port=4098, config_port=4096):
