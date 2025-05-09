@@ -169,7 +169,7 @@ class DCA1000:
         #   0x01: Data Format Mode:     12-Bit
         #   0x19: Packet delay in us:   25
         # 5a a5 03 00 06 00 01 01 01 02 01 19 aa ee
-        print(self._send_command(CMD.CONFIG_FPGA_GEN_CMD_CODE, '0600', '0x010101020119'))
+        print(self._send_command(CMD.CONFIG_FPGA_GEN_CMD_CODE, '0600', '010101020119'))
 
         # CONFIG_PACKET_DATA_CMD_CODE
         # set UDP params (CONFIG_PACKET_DATA_CMD_CODE), seems to be LE
