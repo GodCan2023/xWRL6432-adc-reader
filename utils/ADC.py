@@ -26,9 +26,6 @@
 # Modified by Leon Braungardt on 2025-05-10:
 #  - Increase default data socket buffer
 # ------------------------------------------------------------------------------
-
-
-
 import codecs
 import socket
 import struct
