@@ -22,6 +22,21 @@
 #  - Add start_stream() function for starting ADC data capture
 #  - Rename _stop_stream() to stop_stream() and add comment
 # ------------------------------------------------------------------------------
+# ------------------------------------------------------------------------------
+# Modified by Leon Braungardt on 2025-05-10:
+#  - Converted static ADC constants (ADC_PARAMS) to dynamic constructor parameters
+#  - Converted ADC_PARAMS "IQ" param (int) to "cmplx_valued" (bool)
+#  - Moved calculation of UDP packet / frame variables which were based on ADC 
+#       constants (ADC_PARAMS) to read() function
+#  - Replaced parameters of CONFIG_FPGA_GEN to match xWRL6432 and in order to
+#       replace mmWave studio
+#  - Add comment to CONFIG_PACKET_DATA
+#  - Add reset() function for resetting the FPGA
+#  - Add start_stream() function for starting ADC data capture
+#  - Rename _stop_stream() to stop_stream() and add comment
+# ------------------------------------------------------------------------------
+
+
 
 import codecs
 import socket
@@ -100,8 +115,8 @@ class DCA1000:
         # self.config_port = config_port
 
         # Calculate bytes per frame
-        self.bytes_in_frame = num_chirp_loops * num_rx_ant * num_tx_ant * (2 if cmplx_valued else 1) *
-                            num_adc_samples * num_bytes_per_sample
+        self.bytes_in_frame = (num_chirp_loops * num_rx_ant * num_tx_ant * (2 if cmplx_valued else 1) *
+                            num_adc_samples * num_bytes_per_sample)
 
         # Create configuration and data destinations
         self.cfg_dest = (adc_ip, config_port)
@@ -118,6 +133,9 @@ class DCA1000:
 
         # Bind data socket to fpga
         self.data_socket.bind(self.data_recv)
+
+        # Modified by Leon Braungardt on 2025-05-10: Increase default socket buffer
+        self.data_socket.setsockopt(socket.SOL_SOCKET, socket.SO_RCVBUF, 512 * 1024)
 
         # Bind config socket to fpga
         self.config_socket.bind(self.cfg_recv)
