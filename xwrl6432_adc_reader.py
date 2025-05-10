@@ -1,4 +1,51 @@
 """
+Module for acquiring and ADC data from an IWRL6432 radar sensor via DCA100
+without the need for mmWave Studio.
+
+This module defines the `XWRL6432AdcReader` class, which encapsulates the
+functionality required to interface with a Texas Instruments IWRL6432 radar
+evaluation module (EVM) and a DCA1000EVM data capture card.
+
+The primary class, `XWRL6432AdcReader`, handles:
+- Parsing radar configuration files (.cfg).
+- Initializing and configuring the radar and DCA1000EVM hardware.
+- Managing data acquisition in a separate thread.
+- Performing data processing, specifically RDIF (Radar Data Interface Format) 
+  unswizzling to reconstruct ADC samples.
+- Outputting processed data frames via a multiprocessing queue for consumption
+  by other applications.
+
+This module relies on helper utilities:
+- `utils.ADC.DCA1000` for DCA1000EVM control, which is taken from the OpenRadar project 
+  https://github.com/PreSenseRadar/OpenRadar (/mmwave/dataloader/ADC.py) and was adapted
+  for the needs of this project and the xWRL6432
+- `utils.radar_cli_accessor.RadarCLI` for communication with the radar EVM via mmWave CLI.
+
+Typical Usage:
+    # from multiprocessing import Queue
+    # from XWRL6432AdcReader import XWRL6432AdcReader
+    #
+    # data_queue = Queue()
+    # adc_reader = XWRL6432AdcReader(
+    #     radar_serial_port="/dev/ttyACM1",
+    #     radar_cfg_path="path/to/your/iwrl6432.cfg",
+    #     out_queue=data_queue
+    # )
+    #
+    # try:
+    #     adc_reader.start_acquisition()
+    #     # ... Application logic to consume data from data_queue ...
+    #     # e.g., while True: frame = data_queue.get() ...
+    # except KeyboardInterrupt:
+    #     print("Stopping acquisition...")
+    # finally:
+    #     adc_reader.stop_acquisition()
+    #     adc_reader.close()
+
+Dependencies:
+- Python 3.x
+- NumPy
+- Potentially `pyserial` (likely used by `RadarCLI`)
 
 """
 import threading
@@ -13,7 +60,43 @@ from utils.radar_cli_accessor import RadarCLI
 RADAR_CFG_FILE_PATH = "radar_config/iwrl6432.cfg"
 
 class XWRL6432AdcReader(threading.Thread):
+    """
+    A class to manage data acquisition from an xWRL6432 radar sensor
+    using a DCA1000EVM data capture card, removing the need for mmWave
+    studio.
+
+    This class handles radar configuration, data capture, raw data processing
+    (including RDIF unswizzling), and makes the processed ADC data available
+    through an output queue.
+
+    Attributes:
+        radar_serial_port (str): The serial port for radar communication.
+        radar_cfg_path (Path):  Path to the radar configuration file.
+        out_queue (Queue):      Queue to output processed ADC data.
+        cli (RadarCLI | None):  Instance for radar command-line interface communication.
+        dca (DCA1000 | None):   Instance for DCA1000 EVM control.
+        num_chirps_per_frame (int): Total number of chirps in a frame.
+        num_tx_ant (int):       Number of active transmitter antennas.
+        num_rx_ant (int):       Number of active receiver antennas.
+        num_adc_samples (int):  Number of ADC samples per chirp.
+        num_chirp_loops (int):  Number of chirp loops (frames / Tx antennas).
+    """
     def __init__(self, radar_serial_port: str, radar_cfg_path: str, out_queue: Queue):
+        """
+        Initializes the XWRL6432AdcReader.
+
+        Args:
+            radar_serial_port (str): The serial port name for communicating with the radar EVM
+                                     (e.g., "COM3" or "/dev/ttyUSB0").
+            radar_cfg_path (str):   The file path to the radar configuration (.cfg) file.
+            out_queue (Queue):      A multiprocessing.Queue instance where processed ADC data frames
+                               (as NumPy arrays) will be placed.
+
+        Raises:
+            FileNotFoundError: If the radar configuration file does not exist.
+            ValueError: If the supplied config file is not a .cfg file or if
+                        parsed num_tx_ant is zero or negative.
+        """
         super().__init__(daemon=True)
 
         self.radar_serial_port = radar_serial_port
@@ -47,6 +130,14 @@ class XWRL6432AdcReader(threading.Thread):
             raise
         
     def run(self):
+        """
+        Main execution method for the thread.
+
+        This method continuously reads raw data from the DCA1000,
+        interprets it, and places the processed ADC data into the output queue.
+        The loop continues as long as the internal `_running` flag is True and
+        no errors occur.
+        """
         if not self._running or self.dca is None or self.cli is None:
             print("ADC Reader: Run condition not met (not running or DCA/Radar CLI not initialized). Exiting thread.")
             return
@@ -70,6 +161,10 @@ class XWRL6432AdcReader(threading.Thread):
         print("ADC Reader thread: Data acquisition loop finished.")
 
     def start_acquisition(self):
+        """
+        Initializes hardware if necessary, starts the data stream from DCA1000,
+        sends start command to the radar, and starts this thread's execution.
+        """
         try:
             if self.cli is None or self.dca is None:
                 self._init_hardware()
@@ -87,6 +182,18 @@ class XWRL6432AdcReader(threading.Thread):
             print(f"ADC Reader: Failed to start acquisition: {e}")
     
     def stop_acquisition(self, wait_for_thread=True, timeout=2.0):
+        """
+        Stops the data acquisition process.
+
+        Sets the internal running flag to False, sends stop commands to the radar
+        and DCA1000, and optionally waits for the acquisition thread to terminate.
+
+        Args:
+            wait_for_thread (bool): If True, waits for the acquisition thread to
+                                    join (finish its current operations).
+            timeout (float): Maximum time in seconds to wait for the thread if
+                             `wait_for_thread` is True.
+        """
         print("ADC Reader: Stopping acquisition...")
         self._running = False
 
@@ -109,12 +216,23 @@ class XWRL6432AdcReader(threading.Thread):
         print("ADC Reader: Acquisition stopped.")
     
     def close(self):
+        """
+        Closes connections to the radar CLI and DCA1000.
+        This should be called to release hardware resources.
+        """
         if self.cli:
             self.cli.close()
         if self.dca:
             self.dca.close()
 
     def _init_hardware(self):
+        """
+        Initializes and configures the radar EVM via RadarCLI (mmWave CLI) 
+        and the DCA1000EVM.
+
+        Raises:
+            Exception: If radar or DCA1000 configuration fails.
+        """
         if self.cli is not None and self.dca is not None:
             print("Hardware already initialized.")
             return
@@ -139,6 +257,20 @@ class XWRL6432AdcReader(threading.Thread):
             raise
     
     def _interpret_raw_data(self, raw_data):
+        """
+        Processes raw ADC data from the DCA1000.
+
+        This involves unswizzling the RDIF data, reshaping it into the
+        desired format (chirp_loops x channel x adc_samples), and
+        converting 12-bit unsigned ADC values to signed values.
+
+        Args:
+            raw_data (bytes or np.ndarray): Raw data (uint16) from the DCA1000.
+
+        Returns:
+            np.ndarray: Processed ADC data as a NumPy array of dtype float32,
+                        with shape (num_chirp_loops, num_tx_ant * num_rx_ant, num_adc_samples).
+        """
         # perform RDIF unswizzling
         data = self._unswizzle_rdif_data(raw_data)
 
@@ -162,6 +294,22 @@ class XWRL6432AdcReader(threading.Thread):
     
     @staticmethod
     def _parse_radar_config(config_path: Path):
+        """
+        Parses a radar configuration file to extract essential parameters.
+
+        Args:
+            config_path (Path): Path object pointing to the radar .cfg file.
+
+        Returns:
+            tuple: A tuple containing:
+                - chirps_per_frame (int): Total number of chirps per frame.
+                - num_tx_ant (int): Number of active transmitter antennas.
+                - num_rx_ant (int): Number of active receiver antennas.
+                - num_adc_samples (int): Number of ADC samples per chirp.
+        
+        Raises:
+            ValueError: If essential configuration lines are missing or malformed.
+        """
         chirps_per_frame = 0
         num_tx_ant = 0
         num_rx_ant = 0
@@ -202,7 +350,7 @@ class XWRL6432AdcReader(threading.Thread):
         sample being made up of 12 bits.
         IWRL6432 uses RDIF instead of LVDS, and RDIF data is swizzled.
         Only compatible with RDIF Swizzling Mode 2 (aka. Pin0-bit0-Cycle3 Mode)
-        Mor info here: 
+        More info here: 
         https://e2e.ti.com/support/sensors-group/sensors/f/sensors-forum/1232378/iwrl6432boost-enabling-data-streaming-via-ldvs-in-software
 
         Args:
