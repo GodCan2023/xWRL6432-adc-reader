@@ -55,7 +55,7 @@ from pathlib import Path
 import numpy as np
 
 from utils.ADC import DCA1000
-from utils.radar_cli_accessor import RadarCLI
+from utils.radar_cli import RadarCLI
 
 RADAR_CFG_FILE_PATH = "radar_config/iwrl6432.cfg"
 
