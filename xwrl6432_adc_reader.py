@@ -5,6 +5,10 @@ import threading
 from multiprocessing import Queue
 import serial
 from pathlib import Path
+import numpy as np
+
+from utils.ADC import DCA1000
+from utils.radar_cli_accessor import RadarCLI
 
 RADAR_CFG_FILE_PATH = "radar_config/iwrl6432.cfg"
 
@@ -12,9 +16,11 @@ class XWRL6432AdcReader(threading.Thread):
     def __init__(self, radar_serial_port: str, radar_cfg_path: str, out_queue: Queue):
         super().__init__(daemon=True)
 
-        self.out_queue = out_queue
-        self._running = False # Don't start running immediately
+        self.radar_serial_port = radar_serial_port
         self.radar_cfg_path = Path(radar_cfg_path)
+        self.out_queue = out_queue
+
+        self._running = False # Don't start running immediately
 
         self.cli = None
         self.dca = None
@@ -50,7 +56,7 @@ class XWRL6432AdcReader(threading.Thread):
             try:
                 raw_frame = self.dca.read()
                 if raw_frame:
-                    adc_data = self._decode_raw_data(raw_frame)
+                    adc_data = self._interpret_raw_data(raw_frame)
                     self.out_queue.put(adc_data)
                 elif self._running:
                     print("ADC Reader thread: No data from DCA read")
@@ -132,11 +138,36 @@ class XWRL6432AdcReader(threading.Thread):
             self.dca = None
             raise
     
+    def _interpret_raw_data(self, raw_data):
+        # perform RDIF unswizzling
+        data = self._unswizzle_rdif_data(raw_data)
+
+        # reshape the data into the structure it comes in
+        data = np.reshape(data, [self.num_chirp_loops, self.num_tx_ant, self.num_adc_samples, self.num_rx_ant])
+        # reformat into chirp_loops x adc_samples x tx_channel x rx_channel
+        data = np.transpose(data, [0, 2, 1, 3])
+        # reformat into chirp_loops x adc_samples x channel
+        # channel then is organized as: [0]tx0->rx0 | [1]tx0->rx1 | [2]tx0->rx2 | [3]tx1->rx0 | [4]tx1->rx1 | [5]tx1->rx2 
+        data = np.reshape(data, [self.num_chirp_loops, self.num_adc_samples, (self.num_tx_ant*self.num_rx_ant)])
+        # bring it into format chirp_loops x channel x adc_samples so it is compatible with OpenRadar lib
+        data = data.swapaxes(1, 2)
+
+        # convert the 12-bit unsigned values [0, 4095] to signed [-2048, 2047]
+        data = data.astype(np.float32)
+        max_signed_val = 2**(12 - 1) - 1 # 2047
+        # subtract 2^12 (4096) from values which exceed the max positive to wrap them to negative
+        data[data > max_signed_val] -= 2**12
+
+        return data
     
     @staticmethod
     def _parse_radar_config(config_path: Path):
-        chirps_per_frame, num_tx_ant, num_rx_ant, num_adc_samples = 0
-        num_chirps_per_burst, num_bursts_per_frame = 0
+        chirps_per_frame = 0
+        num_tx_ant = 0
+        num_rx_ant = 0
+        num_adc_samples = 0
+        num_chirps_per_burst = 0
+        num_bursts_per_frame = 0
 
         with open(config_path, 'r') as file:
             for line in file:
@@ -163,15 +194,85 @@ class XWRL6432AdcReader(threading.Thread):
 
         chirps_per_frame = num_chirps_per_burst * num_bursts_per_frame
         return chirps_per_frame, num_tx_ant, num_rx_ant, num_adc_samples
+
+    @staticmethod
+    def _unswizzle_rdif_data(raw_data):
+        """
+        Unpacks RDIF data (un-swizzles) from a 1D array of uint16 values, each ADC
+        sample being made up of 12 bits.
+        IWRL6432 uses RDIF instead of LVDS, and RDIF data is swizzled.
+        Only compatible with RDIF Swizzling Mode 2 (aka. Pin0-bit0-Cycle3 Mode)
+        Mor info here: 
+        https://e2e.ti.com/support/sensors-group/sensors/f/sensors-forum/1232378/iwrl6432boost-enabling-data-streaming-via-ldvs-in-software
+
+        Args:
+            raw_data (np.ndarray): 1D NumPy array of dtype uint16.
+
+        Returns:
+            np.ndarray: 1D NumPy array of dtype uint16 containing the unpacked
+                        12-bit samples.
+        """
+        # ensure data is a NumPy array of uint16
+        raw_data = np.array(raw_data, dtype=np.uint16)
+
+        # ensure data length is a multiple of 4 (RDIF uses 64 bit blocks)
+        num_elements = raw_data.shape[0]
+        assert num_elements > 0 and num_elements % 4 == 0, (
+            f"raw_data length must be non-zero and a multiple of 4, got {num_elements}"
+        )
+
+        # RDIF unpacking works on 64-bit (4 * uint16) blocks, so reshape data into blocks with each 4 columns (4 uint16 values)
+        # each row data_chunk is [W0, W1, W2, W3]
+        data_reshaped = np.reshape(raw_data, [-1, 4])
+        num_chunks = data_reshaped.shape[0]
+
+        # the bits of one sample are scattered across all 4 words (w0, w1, w2, w3). So for each Sample (S0, S1, S2, S3):
+        #       MSB                                                                                                LSB
+        # S0 = w3_b11 | w2_b11 | w1_b11 | w0_b11 | w3_b10 | w2_b10 | w1_b10 | w0_b10 | w3_b09 | w2_b09 | w1_b09 | w0_b09
+        # S1 = w3_b08 | w2_b08 | w1_b08 | w0_b08 | w3_b07 | w2_b07 | w1_b07 | w0_b07 | w3_b06 | w2_b06 | w1_b06 | w0_b06
+        # S2 = w3_b05 | w2_b05 | w1_b05 | w0_b05 | w3_b04 | w2_b04 | w1_b04 | w0_b04 | w3_b03 | w2_b03 | w1_b03 | w0_b03
+        # S3 = w3_b02 | w2_b02 | w1_b02 | w0_b02 | w3_b01 | w2_b01 | w1_b01 | w0_b01 | w3_b00 | w2_b00 | w1_b00 | w0_b00
+
+        w_arrays = [] # arrays for the 4 words (4 columns of RDIF block over all RDIF blocks)
+        s_arrays = [] # arrays for the final samples derived from the 4 columns
+
+        # extract the four words for all chunks
+        for i in range(4):
+            w_arrays.append(data_reshaped[:, i])
+        
+        # initialize all output sample arrays with zeros
+        for i in range(4):
+            s_arrays.append(np.zeros(num_chunks, dtype=np.uint16))
     
-    @staticmethod
-    def _decode_raw_data(raw):
-        # TODO
+        # bit shifts to get the 3-bit groups from input words Wi for S0, S1, S2, S3 respectively
+        input_word_group_shifts = [9, 6, 3, 0]
 
-    @staticmethod
-    def _deswizzle(data):
-        # TODO
+        # loop for each output sample type (S0, S1, S2, S3)
+        for s_idx in range(4):
+            current_input_word_bit_shift = input_word_group_shifts[s_idx]
 
+            # extract the relevant 3-bit groups from ALL W0, W1, W2, W3 for current sample
+            bitgroups_for_current_s = [] # e.g. for S0: [ ((W0>>9)&7), ((W1>>9)&7), ((W2>>9)&7), ((W3>>9)&7) ]
+            for w_array in w_arrays:
+                three_bits_array_from_word = (w_array >> current_input_word_bit_shift) & 0x7
+                bitgroups_for_current_s.append(three_bits_array_from_word)
+
+            # construct output samples
+            for idx_of_bit_in_3bit_group in range(3):  # iterate 0 (LSB), 1 (Mid), 2 (MSB) of the 3-bit groups
+                for source_word_idx in range(4): # iterate over bits extracted from W0, W1, W2, W3
+                    # determine where this bit goes in the 12-bit output sample
+                    bit_pos_in_s = idx_of_bit_in_3bit_group * 4 + source_word_idx
+
+                    # get the specific bit (0 or 1) from the current 3-bit group
+                    source_bit_val_array = (bitgroups_for_current_s[source_word_idx] >> idx_of_bit_in_3bit_group) & 1
+
+                    # place the bit in the correct position in the current output sample array
+                    s_arrays[s_idx] |= (source_bit_val_array << bit_pos_in_s)
+        
+        # stack S0, S1, S2, S3 arrays side-by-side (columns) and then flatten row-wise
+        unswizzled_output = np.stack(s_arrays, axis=1).flatten()
+
+        return unswizzled_output
     
     
 
