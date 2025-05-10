@@ -24,16 +24,7 @@
 # ------------------------------------------------------------------------------
 # ------------------------------------------------------------------------------
 # Modified by Leon Braungardt on 2025-05-10:
-#  - Converted static ADC constants (ADC_PARAMS) to dynamic constructor parameters
-#  - Converted ADC_PARAMS "IQ" param (int) to "cmplx_valued" (bool)
-#  - Moved calculation of UDP packet / frame variables which were based on ADC 
-#       constants (ADC_PARAMS) to read() function
-#  - Replaced parameters of CONFIG_FPGA_GEN to match xWRL6432 and in order to
-#       replace mmWave studio
-#  - Add comment to CONFIG_PACKET_DATA
-#  - Add reset() function for resetting the FPGA
-#  - Add start_stream() function for starting ADC data capture
-#  - Rename _stop_stream() to stop_stream() and add comment
+#  - Increase default data socket buffer
 # ------------------------------------------------------------------------------
 
 
