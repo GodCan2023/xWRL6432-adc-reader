@@ -22,25 +22,25 @@ This module relies on helper utilities:
 - `utils.radar_cli_accessor.RadarCLI` for communication with the radar EVM via mmWave CLI.
 
 Typical Usage:
-    # from multiprocessing import Queue
-    # from XWRL6432AdcReader import XWRL6432AdcReader
-    #
-    # data_queue = Queue()
-    # adc_reader = XWRL6432AdcReader(
-    #     radar_serial_port="/dev/ttyACM1",
-    #     radar_cfg_path="path/to/your/iwrl6432.cfg",
-    #     out_queue=data_queue
-    # )
-    #
-    # try:
-    #     adc_reader.start_acquisition()
-    #     # ... Application logic to consume data from data_queue ...
-    #     # e.g., while True: frame = data_queue.get() ...
-    # except KeyboardInterrupt:
-    #     print("Stopping acquisition...")
-    # finally:
-    #     adc_reader.stop_acquisition()
-    #     adc_reader.close()
+    from multiprocessing import Queue
+    from XWRL6432AdcReader import XWRL6432AdcReader
+
+    data_queue = Queue()
+    adc_reader = XWRL6432AdcReader(
+        radar_serial_port="/dev/ttyACM1",
+        radar_cfg_path="path/to/your/iwrl6432.cfg",
+        out_queue=data_queue
+    )
+    
+    try:
+        adc_reader.start_acquisition()
+        # ... Application logic to consume data from data_queue ...
+        # e.g., while True: frame = data_queue.get() ...
+    except KeyboardInterrupt:
+        print("Stopping acquisition...")
+    finally:
+        adc_reader.stop_acquisition()
+        adc_reader.close()
 
 Dependencies:
 - Python 3.x
