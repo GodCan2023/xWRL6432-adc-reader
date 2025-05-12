@@ -68,7 +68,7 @@ class RadarCLI():
             print(f"Unable to open serial port {radar_serial_port}: {e}")
             raise
     
-    def _send_and_listen(self, command, keyword="Done", timeout=2, encoding='utf-8'):
+    def _send_and_listen(self, command, keyword="Done", timeout=2, encoding='utf-8') -> bool:
         """
         Sends a command, listens for a keyword in the reply within a timeout.
 
@@ -137,11 +137,11 @@ class RadarCLI():
                 if not success:
                     raise Exception("Failed to send config to radar")
 
-    def send_start_cmd(self):
+    def send_start_cmd(self) -> bool:
         """Sends RF frontend start command."""
         return self._send_and_listen("sensorStart 0 0 0 0")
 
-    def send_stop_cmd(self):
+    def send_stop_cmd(self) -> bool:
         """Sends RF frontend stop command."""
         return self._send_and_listen("sensorStop 0")
 

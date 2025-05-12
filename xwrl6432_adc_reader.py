@@ -294,7 +294,7 @@ class XWRL6432AdcReader(threading.Thread):
         return data
     
     @staticmethod
-    def _parse_radar_config(config_path: Path):
+    def _parse_radar_config(config_path: Path) -> tuple[int, int, int, int]:
         """
         Parses a radar configuration file to extract essential parameters.
 
@@ -345,7 +345,7 @@ class XWRL6432AdcReader(threading.Thread):
         return chirps_per_frame, num_tx_ant, num_rx_ant, num_adc_samples
 
     @staticmethod
-    def _unswizzle_rdif_data(raw_data):
+    def _unswizzle_rdif_data(raw_data) -> np.ndarray:
         """
         Unpacks RDIF data (un-swizzles) from a 1D array of uint16 values, each ADC
         sample being made up of 12 bits.
