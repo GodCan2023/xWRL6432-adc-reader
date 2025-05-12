@@ -12,8 +12,9 @@ The primary class, `XWRL6432AdcReader`, handles:
 - Managing data acquisition in a separate thread.
 - Performing data processing, specifically RDIF (Radar Data Interface Format) 
   unswizzling to reconstruct ADC samples.
-- Outputting processed data frames via a multiprocessing queue for consumption
-  by other applications.
+- Outputting processed data frames via a queue for consumption by other 
+  applications.
+  
 
 This module relies on helper utilities:
 - `utils.ADC.DCA1000` for DCA1000EVM control, which is taken from the OpenRadar project 
@@ -49,7 +50,7 @@ Dependencies:
 
 """
 import threading
-from multiprocessing import Queue
+from queue import Queue
 import serial
 from pathlib import Path
 import numpy as np
@@ -89,7 +90,7 @@ class XWRL6432AdcReader(threading.Thread):
             radar_serial_port (str): The serial port name for communicating with the radar EVM
                                      (e.g., "COM3" or "/dev/ttyUSB0").
             radar_cfg_path (str):   The file path to the radar configuration (.cfg) file.
-            out_queue (Queue):      A multiprocessing.Queue instance where processed ADC data frames
+            out_queue (Queue):      A Queue instance where processed ADC data frames
                                (as NumPy arrays) will be placed.
 
         Raises:
