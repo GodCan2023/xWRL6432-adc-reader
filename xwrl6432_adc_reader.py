@@ -23,7 +23,7 @@ This module relies on helper utilities:
 - `utils.radar_cli_accessor.RadarCLI` for communication with the radar EVM via mmWave CLI.
 
 Typical Usage:
-    from multiprocessing import Queue
+    from queue import Queue
     from XWRL6432AdcReader import XWRL6432AdcReader
 
     data_queue = Queue()
