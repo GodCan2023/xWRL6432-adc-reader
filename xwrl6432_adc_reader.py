@@ -272,23 +272,23 @@ class XWRL6432AdcReader(threading.Thread):
             np.ndarray: Processed ADC data as a NumPy array of dtype float32,
                         with shape (num_chirp_loops, num_tx_ant * num_rx_ant, num_adc_samples).
         """
-        # perform RDIF unswizzling
+        # Perform RDIF unswizzling
         data = self._unswizzle_rdif_data(raw_data)
 
-        # reshape the data into the structure it comes in
+        # Reshape the data into the structure it comes in
         data = np.reshape(data, [self.num_chirp_loops, self.num_tx_ant, self.num_adc_samples, self.num_rx_ant])
-        # reformat into chirp_loops x adc_samples x tx_channel x rx_channel
+        # Reformat into chirp_loops x adc_samples x tx_channel x rx_channel
         data = np.transpose(data, [0, 2, 1, 3])
-        # reformat into chirp_loops x adc_samples x channel
-        # channel then is organized as: [0]tx0->rx0 | [1]tx0->rx1 | [2]tx0->rx2 | [3]tx1->rx0 | [4]tx1->rx1 | [5]tx1->rx2 
+        # Reformat into chirp_loops x adc_samples x channel
+        # Channel then is organized as: [0]tx0->rx0 | [1]tx0->rx1 | [2]tx0->rx2 | [3]tx1->rx0 | [4]tx1->rx1 | [5]tx1->rx2 
         data = np.reshape(data, [self.num_chirp_loops, self.num_adc_samples, (self.num_tx_ant*self.num_rx_ant)])
-        # bring it into format chirp_loops x channel x adc_samples so it is compatible with OpenRadar lib
+        # Bring it into format chirp_loops x channel x adc_samples so it is compatible with OpenRadar lib
         data = data.swapaxes(1, 2)
 
-        # convert the 12-bit unsigned values [0, 4095] to signed [-2048, 2047]
+        # Convert the 12-bit unsigned values [0, 4095] to signed [-2048, 2047]
         data = data.astype(np.float32)
         max_signed_val = 2**(12 - 1) - 1 # 2047
-        # subtract 2^12 (4096) from values which exceed the max positive to wrap them to negative
+        # Subtract 2^12 (4096) from values which exceed the max positive to wrap them to negative
         data[data > max_signed_val] -= 2**12
 
         return data
@@ -320,10 +320,10 @@ class XWRL6432AdcReader(threading.Thread):
 
         with open(config_path, 'r') as file:
             for line in file:
-                # strip trailing spaces
+                # Strip trailing spaces
                 line = line.strip()
 
-                # only channelCfg, chirpComnCfg and frameCfg are of interest
+                # Only channelCfg, chirpComnCfg and frameCfg are of interest
                 if line.startswith("ChannelCfg"):
                     parts = line.split()
                     vals = parts[1:]
@@ -361,10 +361,10 @@ class XWRL6432AdcReader(threading.Thread):
             np.ndarray: 1D NumPy array of dtype uint16 containing the unpacked
                         12-bit samples.
         """
-        # ensure data is a NumPy array of uint16
+        # Ensure data is a NumPy array of uint16
         raw_data = np.array(raw_data, dtype=np.uint16)
 
-        # ensure data length is a multiple of 4 (RDIF uses 64 bit blocks)
+        # Ensure data length is a multiple of 4 (RDIF uses 64 bit blocks)
         num_elements = raw_data.shape[0]
         assert num_elements > 0 and num_elements % 4 == 0, (
             f"raw_data length must be non-zero and a multiple of 4, got {num_elements}"
@@ -375,7 +375,7 @@ class XWRL6432AdcReader(threading.Thread):
         data_reshaped = np.reshape(raw_data, [-1, 4])
         num_chunks = data_reshaped.shape[0]
 
-        # the bits of one sample are scattered across all 4 words (w0, w1, w2, w3). So for each Sample (S0, S1, S2, S3):
+        # The bits of one sample are scattered across all 4 words (w0, w1, w2, w3). So for each Sample (S0, S1, S2, S3):
         #       MSB                                                                                                LSB
         # S0 = w3_b11 | w2_b11 | w1_b11 | w0_b11 | w3_b10 | w2_b10 | w1_b10 | w0_b10 | w3_b09 | w2_b09 | w1_b09 | w0_b09
         # S1 = w3_b08 | w2_b08 | w1_b08 | w0_b08 | w3_b07 | w2_b07 | w1_b07 | w0_b07 | w3_b06 | w2_b06 | w1_b06 | w0_b06
@@ -385,40 +385,40 @@ class XWRL6432AdcReader(threading.Thread):
         w_arrays = [] # arrays for the 4 words (4 columns of RDIF block over all RDIF blocks)
         s_arrays = [] # arrays for the final samples derived from the 4 columns
 
-        # extract the four words for all chunks
+        # Extract the four words for all chunks
         for i in range(4):
             w_arrays.append(data_reshaped[:, i])
         
-        # initialize all output sample arrays with zeros
+        # Initialize all output sample arrays with zeros
         for i in range(4):
             s_arrays.append(np.zeros(num_chunks, dtype=np.uint16))
     
-        # bit shifts to get the 3-bit groups from input words Wi for S0, S1, S2, S3 respectively
+        # Bit shifts to get the 3-bit groups from input words Wi for S0, S1, S2, S3 respectively
         input_word_group_shifts = [9, 6, 3, 0]
 
-        # loop for each output sample type (S0, S1, S2, S3)
+        # Loop for each output sample type (S0, S1, S2, S3)
         for s_idx in range(4):
             current_input_word_bit_shift = input_word_group_shifts[s_idx]
 
-            # extract the relevant 3-bit groups from ALL W0, W1, W2, W3 for current sample
+            # Extract the relevant 3-bit groups from ALL W0, W1, W2, W3 for current sample
             bitgroups_for_current_s = [] # e.g. for S0: [ ((W0>>9)&7), ((W1>>9)&7), ((W2>>9)&7), ((W3>>9)&7) ]
             for w_array in w_arrays:
                 three_bits_array_from_word = (w_array >> current_input_word_bit_shift) & 0x7
                 bitgroups_for_current_s.append(three_bits_array_from_word)
 
-            # construct output samples
+            # Construct output samples
             for idx_of_bit_in_3bit_group in range(3):  # iterate 0 (LSB), 1 (Mid), 2 (MSB) of the 3-bit groups
                 for source_word_idx in range(4): # iterate over bits extracted from W0, W1, W2, W3
-                    # determine where this bit goes in the 12-bit output sample
+                    # Determine where this bit goes in the 12-bit output sample
                     bit_pos_in_s = idx_of_bit_in_3bit_group * 4 + source_word_idx
 
-                    # get the specific bit (0 or 1) from the current 3-bit group
+                    # Get the specific bit (0 or 1) from the current 3-bit group
                     source_bit_val_array = (bitgroups_for_current_s[source_word_idx] >> idx_of_bit_in_3bit_group) & 1
 
-                    # place the bit in the correct position in the current output sample array
+                    # Place the bit in the correct position in the current output sample array
                     s_arrays[s_idx] |= (source_bit_val_array << bit_pos_in_s)
         
-        # stack S0, S1, S2, S3 arrays side-by-side (columns) and then flatten row-wise
+        # Stack S0, S1, S2, S3 arrays side-by-side (columns) and then flatten row-wise
         unswizzled_output = np.stack(s_arrays, axis=1).flatten()
 
         return unswizzled_output
