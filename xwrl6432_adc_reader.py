@@ -51,7 +51,6 @@ Dependencies:
 """
 import threading
 from queue import Queue
-import serial
 from pathlib import Path
 import numpy as np
 
