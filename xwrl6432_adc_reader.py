@@ -53,6 +53,7 @@ import threading
 from queue import Queue
 from pathlib import Path
 import numpy as np
+import time
 
 from utils.ADC import DCA1000
 from utils.radar_cli import RadarCLI
@@ -143,14 +144,22 @@ class XWRL6432AdcReader(threading.Thread):
             return
 
         print("ADC Reader thread: Starting data acquisition loop.")
+        last_frame_time = time.perf_counter()
         while self._running:
             try:
                 raw_frame = self.dca.read()
-                if raw_frame:
+
+                # Optional: Calculate and output duration since last call
+                current_time = time.perf_counter()
+                time_interval_sec = current_time - last_frame_time
+                time_interval_ms = time_interval_sec * 1000
+                last_frame_time = current_time
+                print(f"Time since last frame start: {time_interval_ms:.2f} ms")
+                
+                if raw_frame is not None:
                     adc_data = self._interpret_raw_data(raw_frame)
                     self.out_queue.put(adc_data)
                 elif self._running:
-                    print("ADC Reader thread: No data from DCA read")
                     raise RuntimeError("No data from DCA read while reader was active")
                 else: 
                     break 
@@ -167,7 +176,10 @@ class XWRL6432AdcReader(threading.Thread):
         """
         try:
             if self.cli is None or self.dca is None:
-                self._init_hardware()
+                try:
+                    self._init_hardware()
+                except Exception as e:
+                    raise SystemExit(f"Failed to initialize hardware.") from e
             
             if self.cli is None or self.dca is None:
                 print("Cannot start acquisition: Hardware initialization failed.")
@@ -177,7 +189,6 @@ class XWRL6432AdcReader(threading.Thread):
             self.cli.send_start_cmd()
             self._running = True
             super().start()
-            print("ADC Reader: Acquisition started.")
         except Exception as e:
             print(f"ADC Reader: Failed to start acquisition: {e}")
     
@@ -214,6 +225,23 @@ class XWRL6432AdcReader(threading.Thread):
             if self.is_alive():
                 print("ADC Reader: Thread did not terminate in time.")
         print("ADC Reader: Acquisition stopped.")
+
+    def get_radar_config(self) -> dict:
+        """
+        Returns the essential radar configuration parameters as a dictionary.
+
+        Returns:
+            A dictionary containing key radar configuration parameters.
+        """
+        config_data = {
+            "num_chirps_per_frame": self.num_chirps_per_frame,
+            "num_tx_ant": self.num_tx_ant,
+            "num_rx_ant": self.num_rx_ant,
+            "num_adc_samples": self.num_adc_samples,
+            "num_chirp_loops": self.num_chirp_loops,
+        }
+        return config_data
+
     
     def close(self):
         """
@@ -248,7 +276,6 @@ class XWRL6432AdcReader(threading.Thread):
         
         try:
             self.dca = DCA1000(self.num_chirp_loops, self.num_rx_ant, self.num_tx_ant, self.num_adc_samples)
-            self.dca.reset()
             self.dca.configure()
             print("DCA1000 initialized and configured.")
         except Exception as e:
@@ -323,7 +350,7 @@ class XWRL6432AdcReader(threading.Thread):
                 line = line.strip()
 
                 # Only channelCfg, chirpComnCfg and frameCfg are of interest
-                if line.startswith("ChannelCfg"):
+                if line.startswith("channelCfg"):
                     parts = line.split()
                     vals = parts[1:]
                     num_rx_ant = bin(int(vals[0])).count('1')
@@ -338,8 +365,7 @@ class XWRL6432AdcReader(threading.Thread):
                     parts = line.split()
                     vals = parts[1:]
                     num_chirps_per_burst = int(vals[0])
-                    num_bursts_per_frame = (vals[3])
-
+                    num_bursts_per_frame = int(vals[3])
         chirps_per_frame = num_chirps_per_burst * num_bursts_per_frame
         return chirps_per_frame, num_tx_ant, num_rx_ant, num_adc_samples
 
