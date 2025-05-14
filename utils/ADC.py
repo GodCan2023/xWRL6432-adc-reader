@@ -250,7 +250,10 @@ class DCA1000:
         # Read packets until a full frame is read
         while True:
             # Remove incomplete frames from frame buffer which exceed a timeout
-            self._delete_incomplete_frames()
+            dropped_frames = self._delete_incomplete_frames(timeout_seconds=0.2)
+            if dropped_frames:
+                ids = ", ".join(str(f) for f in dropped_frames)
+                print(f"WARNING: Dropped Frame(s) {ids} since they weren't complete.")
             
             # Read UDP packet
             packet_num, byte_count, packet_data = self._read_data_packet()
@@ -367,17 +370,20 @@ class DCA1000:
         """Helper function to delete incomplete frames from frame buffer which exceed a given timeout
 
         Args:
-            float: timeout_seconds: Time after which incomplete frames are deleted
-
+            timeout_seconds (float): Time after which incomplete frames are deleted
+        
+        Returns:
+            List[int]: List of frame numbers which were deleted (can be empty)
         """
         now = time.time()
         to_delete = []
         for frame_number, buf in self.frame_buff.items():
             if now - buf['first_seen'] > timeout_seconds:
-                print(f"WARNING: Deleted Frame {frame_number} since it is incomplete (Timeout {str(timeout_seconds)} seconds).")
                 to_delete.append(frame_number)
         for frame_number in to_delete:
             del self.frame_buff[frame_number]
+        
+        return to_delete
 
     def _listen_for_error(self):
         """Helper function to try and read in for an error message from the FPGA
