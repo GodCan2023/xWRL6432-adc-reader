@@ -3,6 +3,8 @@ import time
 import threading
 from queue import Queue
 from queue import Empty as QueueEmpty
+import numpy as np
+from pathlib import Path
 
 class ADCRecorder(threading.Thread):
     """
@@ -47,11 +49,11 @@ class ADCRecorder(threading.Thread):
             while self._running and self._frames_recorded_count < self.num_frames_to_record:
                 try:
                     # Read frame from input_queue with a timeout of 1s and add to recorded_frames[]
-                    frame = self.input_queue.get(timeout=1.0)
+                    frame = self.input_queue.get(timeout=5.0)
                     self.recorded_frames.append(frame)
                     self._frames_recorded_count += 1
                 except QueueEmpty:
-                    print("Timeout: Input Queue was empty for one second.")
+                    print("Timeout: Input Queue was empty for 5 seconds.")
                     raise
             
             if self._frames_recorded_count == self.num_frames_to_record:
@@ -122,6 +124,51 @@ class ADCRecorder(threading.Thread):
         if self._running and not self.recording_task_complete_event.is_set():
             print("ADC Recorder: Warning - Requesting data while recording is actively in progress.")
         return self.recorded_frames
+
+    def save_to_npz(self, file_path: str | Path, config_metadata: dict = None) -> bool:
+        """
+        Saves the recorded ADC frames and optional configuration
+        metadata to a compressed NumPy .npz file.
+
+        Args:
+            file_path (str | Path): The path (including filename) where the .npz file will be saved.
+            config_metadata (dict, optional): A dictionary containing metadata to be saved.
+                                              Keys should be strings, values should be compatible
+                                              with NumPy array conversion (e.g., numbers, strings, lists).
+
+        Returns:
+            bool: True if saving was successful, False otherwise.
+        """
+        if not self.recorded_frames:
+            print("ADC Recorder: No frames recorded to save.")
+            return False
+        
+        if self._running and not self.recording_task_complete_event.is_set():
+             print("ADC Recorder: Warning - Saving data while recording might still be in progress. Data might be incomplete.")
+
+        try:
+            file_path_str = str(file_path)
+
+            # Stack frames into a single dimensional array
+            frames_array = np.array(self.recorded_frames)
+
+            data_to_save = {
+                'adc_data': frames_array,
+                'num_frames_recorded_actual': np.array(self._frames_recorded_count),
+                'num_frames_target_config': np.array(self.num_frames_to_record)
+            }
+
+            if config_metadata is not None:
+                # Store the dictionary as a 0-D array of type object
+                # (allows retrieving it as a dictionary using .item())
+                data_to_save['config_metadata'] = np.array(config_metadata, dtype=object)
+            
+            np.savez_compressed(file_path_str, **data_to_save)
+            print(f"ADC Recorder: Successfully saved {self._frames_recorded_count} frames and associated data to {file_path_str}")
+            return True
+        except Exception as e:
+            print(f"ADC Recorder: Error saving data to NPZ file '{file_path}': {e}")
+            return False
 
     def get_frames_recorded_count(self) -> int:
         """
