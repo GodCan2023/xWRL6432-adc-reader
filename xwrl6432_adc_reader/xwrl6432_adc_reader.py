@@ -20,7 +20,7 @@ This module relies on helper utilities:
 - `utils.ADC.DCA1000` for DCA1000EVM control, which is taken from the OpenRadar project 
   https://github.com/PreSenseRadar/OpenRadar (/mmwave/dataloader/ADC.py) and was adapted
   for the needs of this project and the xWRL6432
-- `utils.radar_cli_accessor.RadarCLI` for communication with the radar EVM via mmWave CLI.
+- `utils.radar_cli.RadarCLI` for communication with the radar EVM via mmWave CLI.
 
 Typical Usage:
     from queue import Queue
@@ -42,12 +42,6 @@ Typical Usage:
     finally:
         adc_reader.stop_acquisition()
         adc_reader.close()
-
-Dependencies:
-- Python 3.x
-- NumPy
-- Potentially `pyserial` (likely used by `RadarCLI`)
-
 """
 import threading
 from queue import Queue
@@ -55,10 +49,8 @@ from pathlib import Path
 import numpy as np
 import time
 
-from utils.ADC import DCA1000
-from utils.radar_cli import RadarCLI
-
-RADAR_CFG_FILE_PATH = "radar_config/iwrl6432.cfg"
+from .utils.ADC import DCA1000
+from .utils.radar_cli import RadarCLI
 
 class XWRL6432AdcReader(threading.Thread):
     """
