@@ -44,7 +44,7 @@ This Python package provides a **standalone** real-time ADC reader for the xWRL6
 ### Code
 ```python
 from queue import Queue
-from xwrl6432_reader import XWRL6432AdcReader
+from xwrl6432_adc_reader import XWRL6432AdcReader
 
 # 1) Create a thread-safe queue
 data_queue = Queue()
