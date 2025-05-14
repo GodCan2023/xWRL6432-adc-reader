@@ -310,6 +310,10 @@ class DCA1000:
         Args:
             byte_count: cumulative Bytes before this payload (from DCA1000 header)
             payload:    uint16 from the UDP packet
+        
+        Returns:
+            (int, np.ndarray): Complete frame as a tuple of (frame_num, frame_data),
+                                (None, None) if no frame is complete yet
         """
 
         offset = byte_count // 2 # Absolute position in UDP packet stream
