@@ -10,7 +10,7 @@ from queue import Queue
 import sys, pathlib
 sys.path.append(str(pathlib.Path(__file__).resolve().parent.parent))
 from xwrl6432_adc_reader import XWRL6432AdcReader
-from utils.adc_recorder import ADCRecorder
+from xwrl6432_adc_reader.utils import ADCRecorder
 
 
 # Create the queue which the reader will write the ADC data into
