@@ -26,12 +26,23 @@
 # Modified by Leon Braungardt on 2025-05-10:
 #  - Increase default data socket buffer
 # ------------------------------------------------------------------------------
+# ------------------------------------------------------------------------------
+# Modified by Leon Braungardt on 2025-05-13:
+#  - Changed self.frame_buff from list to dict
+#  - Added self.uint16_in_frame to __init__()
+#  - Completely refactor (replace) read() function in order to fix issues 
+#       concerning data corruption and not all frames being captured
+#  - Added _place_data_packet_in_frame_buffer() function
+#  - Added _delete_incomplete_frames() function
+# ------------------------------------------------------------------------------
+
 import codecs
 import socket
 import struct
 from enum import Enum
 
 import numpy as np
+import time
 
 
 class CMD(Enum):
@@ -105,6 +116,7 @@ class DCA1000:
         # Calculate bytes per frame
         self.bytes_in_frame = (num_chirp_loops * num_rx_ant * num_tx_ant * (2 if cmplx_valued else 1) *
                             num_adc_samples * num_bytes_per_sample)
+        self.uint16_in_frame = self.bytes_in_frame // 2
 
         # Create configuration and data destinations
         self.cfg_dest = (adc_ip, config_port)
@@ -132,7 +144,7 @@ class DCA1000:
         self.packet_count = []
         self.byte_count = []
 
-        self.frame_buff = []
+        self.frame_buff = {}
 
         self.curr_buff = None
         self.last_frame = None
@@ -223,7 +235,7 @@ class DCA1000:
         self.config_socket.close()
 
     def read(self, timeout=1):
-        """ Read in a single packet via UDP
+        """ Read in a single frame via UDP
 
         Args:
             timeout (float): Time to wait for packet before moving on
@@ -235,41 +247,23 @@ class DCA1000:
         # Configure
         self.data_socket.settimeout(timeout)
 
-        # Calculate neccessary values for frame receive via UDP
-        bytes_in_frame_clipped = (self.bytes_in_frame // BYTES_IN_PACKET) * BYTES_IN_PACKET
-        packets_in_frame = self.bytes_in_frame / BYTES_IN_PACKET
-        packets_in_frame_clipped = self.bytes_in_frame // BYTES_IN_PACKET
-        uint16_in_packet = BYTES_IN_PACKET // 2
-        uint16_in_frame = self.bytes_in_frame // 2
-
-        # Frame buffer
-        ret_frame = np.zeros(uint16_in_frame, dtype=np.uint16)
-
-        # Wait for start of next frame
+        # Read packets until a full frame is read
         while True:
+            # Remove incomplete frames from frame buffer which exceed a timeout
+            self._delete_incomplete_frames()
+            
+            # Read UDP packet
             packet_num, byte_count, packet_data = self._read_data_packet()
-            if byte_count % bytes_in_frame_clipped == 0:
-                packets_read = 1
-                ret_frame[0:uint16_in_packet] = packet_data
-                break
 
-        # Read in the rest of the frame            
-        while True:
-            packet_num, byte_count, packet_data = self._read_data_packet()
-            packets_read += 1
+            # Place data from UDP packet in frame buffer
+            frame_num, frame_data = self._place_data_packet_in_frame_buffer(
+                byte_count=byte_count, 
+                payload=packet_data
+            )
 
-            if byte_count % bytes_in_frame_clipped == 0:
-                self.lost_packets = packets_in_frame_clipped - packets_read
-                return ret_frame
+            if frame_data is not None:
+                return frame_data
 
-            curr_idx = ((packet_num - 1) % packets_in_frame_clipped)
-            try:
-                ret_frame[curr_idx * uint16_in_packet:(curr_idx + 1) * uint16_in_packet] = packet_data
-            except:
-                pass
-
-            if packets_read > packets_in_frame_clipped:
-                packets_read = 0
 
     def _send_command(self, cmd, length='0000', body='', timeout=1):
         """Helper function to send a single commmand to the FPGA
@@ -309,6 +303,78 @@ class DCA1000:
         byte_count = struct.unpack('>Q', b'\x00\x00' + data[4:10][::-1])[0]
         packet_data = np.frombuffer(data[10:], dtype=np.uint16)
         return packet_num, byte_count, packet_data
+    
+    def _place_data_packet_in_frame_buffer(self, byte_count: int, payload: np.ndarray):
+        """Helper function to place one UDP packet at the correct position in the frame buffer
+        
+        Args:
+            byte_count: cumulative Bytes before this payload (from DCA1000 header)
+            payload:    uint16 from the UDP packet
+        """
+
+        offset = byte_count // 2 # Absolute position in UDP packet stream
+        idx = 0                  # Read-index of payload
+        remaining = payload.size # Number of uint16 to process
+        completed = (None, None) # Tuple of (frame_id, frame_data) for complete captured frame
+
+        while remaining > 0:
+            # Determine which frame_id this data chunk belongs to
+            frame_id = offset // self.uint16_in_frame
+            # Determine which packet number this is within the frame
+            packet_num_within_frame = offset % self.uint16_in_frame
+            n_uint16_to_frame_end = self.uint16_in_frame - packet_num_within_frame
+
+            # Determine the size chunk of the data which is written to buffer
+            # (detect if the frame border is within this packet or not)
+            chunk_size = min(remaining, n_uint16_to_frame_end)
+
+            # print(f"pkt start off={offset}, take={chunk_size}, frame={frame_id}")
+
+            # Create buffer within frame_buff obj for this frame if neccessary
+            buf = self.frame_buff.setdefault(
+                frame_id,
+                {
+                    'data':   np.empty(self.uint16_in_frame, dtype=np.uint16),
+                    'filled': np.zeros(self.uint16_in_frame, dtype=bool),
+                    'first_seen': time.time()
+                }
+            )
+
+            # Write chunk to appropriate position in the frame's buffer
+            start   = packet_num_within_frame
+            end     = packet_num_within_frame + chunk_size
+            buf['data'][start:end]   = payload[idx:idx+chunk_size]
+            buf['filled'][start:end] = True
+
+            # If all packets for the frame have been read, add it to completed tuple
+            # (but do not return yet, as otherwise the rest of the packet data is lost)
+            if buf['filled'].all():
+                completed = (frame_id, buf['data'].copy())
+                del self.frame_buff[frame_id]
+
+            # Persist in helper vars that chunk has been read
+            offset    += chunk_size
+            idx       += chunk_size
+            remaining -= chunk_size
+        
+        return completed
+
+    def _delete_incomplete_frames(self, timeout_seconds: float=0.2):
+        """Helper function to delete incomplete frames from frame buffer which exceed a given timeout
+
+        Args:
+            float: timeout_seconds: Time after which incomplete frames are deleted
+
+        """
+        now = time.time()
+        to_delete = []
+        for frame_number, buf in self.frame_buff.items():
+            if now - buf['first_seen'] > timeout_seconds:
+                print(f"WARNING: Deleted Frame {frame_number} since it is incomplete (Timeout {str(timeout_seconds)} seconds).")
+                to_delete.append(frame_number)
+        for frame_number in to_delete:
+            del self.frame_buff[frame_number]
+
 
     def _listen_for_error(self):
         """Helper function to try and read in for an error message from the FPGA
