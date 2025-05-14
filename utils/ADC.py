@@ -308,8 +308,8 @@ class DCA1000:
         """Helper function to place one UDP packet at the correct position in the frame buffer
         
         Args:
-            byte_count: cumulative Bytes before this payload (from DCA1000 header)
-            payload:    uint16 from the UDP packet
+            byte_count (int):        cumulative Bytes before this payload (from DCA1000 header)
+            payload (np.ndarray):    uint16 from the UDP packet
         
         Returns:
             (int, np.ndarray): Complete frame as a tuple of (frame_num, frame_data),
