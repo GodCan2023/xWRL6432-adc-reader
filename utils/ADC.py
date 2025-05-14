@@ -379,7 +379,6 @@ class DCA1000:
         for frame_number in to_delete:
             del self.frame_buff[frame_number]
 
-
     def _listen_for_error(self):
         """Helper function to try and read in for an error message from the FPGA
 
