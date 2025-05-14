@@ -79,5 +79,5 @@ The reader expects a TI-style radar configuration file (e.g. iwrl6432.cfg) that 
 
 ## Acknowledgements
 A big thank you to:
-- [**OpenRadar**](https://github.com/PreSenseRadar/OpenRadar): I copied and adapted the DCA1000 interface code from their `ADC.py` module.
+- [**OpenRadar**](https://github.com/PreSenseRadar/OpenRadar): I copied and adapted the DCA1000 interface code from their `adc.py` module.
 - **Texas Instruments**: For the specification documents and detailed packet-format documentation.
