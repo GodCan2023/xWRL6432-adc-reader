@@ -68,9 +68,9 @@ class RadarCLI():
             print(f"Unable to open serial port {radar_serial_port}: {e}")
             raise
     
-    def _send_and_listen(self, command, keyword="Done", timeout=2, encoding='utf-8') -> bool:
+    def _send_and_listen(self, command, timeout=2, encoding='utf-8') -> bool:
         """
-        Sends a command, listens for a keyword in the reply within a timeout.
+        Sends a command, listens for "Done" in the reply within a timeout.
 
         Args:
             command (str): The command string to send (without newline).
@@ -84,6 +84,8 @@ class RadarCLI():
         Raises:
             serial.SerialException: If the serial port is not open or a communication error occurs.
         """
+        # Flush input buffer just to be sure
+        self.ser.reset_input_buffer()
         
         if not self.ser or not self.ser.is_open:
             raise SerialException("Serial port not open or available.")
@@ -91,6 +93,7 @@ class RadarCLI():
         try:
             # Send command
             self.ser.write((command + '\n').encode(encoding))
+            time.sleep(0.2)
 
             # Listen for reply
             end_time = time.time() + timeout
@@ -99,12 +102,17 @@ class RadarCLI():
                 if received_bytes:
                     try:
                         line_str = received_bytes.decode(encoding)
-                        if keyword in line_str:
+                        if "Done" in line_str:
                             return True
+                        if "Error" in line_str:
+                            print(line_str)
+                            break
                     except UnicodeDecodeError:
                         return False
             
-            return False # Keyword not found within timeout
+            # Done keyword not found within timeout
+            print(f"Could not get confirmation for command: {command}")
+            return False
         except SerialException as e:
             print(f"Serial communication error: {e}")
             return False
@@ -123,19 +131,31 @@ class RadarCLI():
             FileNotFoundError: If the config file is not found.
             Exception: If any command from the config file fails to send or be acknowledged.
         """
+        print("Sending Config to radar EVM...")
         
-        with open(config_path, 'r') as file:
-            for i, line in enumerate(tqdm(file)):
-                # Remove leading/trailing whitespace (includes \r, \n, spaces, tabs)
-                line = line.strip()
-                # Ignore comments and empty lines
-                if not line or line.startswith('%'):
-                    continue
+        # Count lines in file
+        with open(config_path, 'r') as f:
+            total_lines = sum(1 for _ in f)
+            if total_lines == 0:
+                print("Config file is empty.")
+                return
 
-                # Write and check for success
-                success = self._send_and_listen(line)
-                if not success:
-                    raise Exception("Failed to send config to radar")
+        with open(config_path, 'r') as file:
+            with tqdm(total=total_lines, unit='line', desc="Sending Cfg", leave=True) as pbar:
+                for i, line in enumerate(file):
+                    # Remove leading/trailing whitespace (includes \r, \n, spaces, tabs)
+                    line = line.strip()
+                    # Ignore comments and empty lines
+                    if not line or line.startswith('%'):
+                        pbar.update(1)
+                        continue
+
+                    # Write and check for success
+                    success = self._send_and_listen(line)
+                    if not success:
+                        raise Exception("Failed to send config to radar")
+                    pbar.update(1)
+        print("Config sent successfully.")
 
     def send_start_cmd(self) -> bool:
         """Sends RF frontend start command."""
