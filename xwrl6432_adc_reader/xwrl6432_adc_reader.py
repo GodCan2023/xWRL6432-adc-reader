@@ -109,7 +109,7 @@ class XWRL6432AdcReader(threading.Thread):
 
         # Parse radar config into values
         try:
-            self.num_chirps_per_frame, self.num_tx_ant, self.num_rx_ant, self.num_adc_samples = self._parse_radar_config(self.radar_cfg_path)
+            self.num_chirps_per_frame, self.num_tx_ant, self.num_rx_ant, self.num_adc_samples, self.frame_period = self._parse_radar_config(self.radar_cfg_path)
             
             if self.num_tx_ant <= 0:
                 raise ValueError("Parsed num_tx_ant is zero or negative.")
@@ -267,7 +267,13 @@ class XWRL6432AdcReader(threading.Thread):
             raise
         
         try:
-            self.dca = DCA1000(self.num_chirp_loops, self.num_rx_ant, self.num_tx_ant, self.num_adc_samples)
+            self.dca = DCA1000(
+                self.num_chirp_loops, 
+                self.num_rx_ant, 
+                self.num_tx_ant, 
+                self.num_adc_samples, 
+                self.frame_period
+            )
             self.dca.configure()
             print("DCA1000 initialized and configured.")
         except Exception as e:
@@ -325,6 +331,7 @@ class XWRL6432AdcReader(threading.Thread):
                 - num_tx_ant (int): Number of active transmitter antennas.
                 - num_rx_ant (int): Number of active receiver antennas.
                 - num_adc_samples (int): Number of ADC samples per chirp.
+                - frame_period (int): Frame period in ms
         
         Raises:
             ValueError: If essential configuration lines are missing or malformed.
@@ -335,6 +342,7 @@ class XWRL6432AdcReader(threading.Thread):
         num_adc_samples = 0
         num_chirps_per_burst = 0
         num_bursts_per_frame = 0
+        frame_period = 0
 
         with open(config_path, 'r') as file:
             for line in file:
@@ -358,8 +366,9 @@ class XWRL6432AdcReader(threading.Thread):
                     vals = parts[1:]
                     num_chirps_per_burst = int(vals[0])
                     num_bursts_per_frame = int(vals[3])
+                    frame_period         = int(vals[4])
         chirps_per_frame = num_chirps_per_burst * num_bursts_per_frame
-        return chirps_per_frame, num_tx_ant, num_rx_ant, num_adc_samples
+        return chirps_per_frame, num_tx_ant, num_rx_ant, num_adc_samples, frame_period
 
     @staticmethod
     def _unswizzle_rdif_data(raw_data) -> np.ndarray:

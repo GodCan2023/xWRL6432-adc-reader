@@ -35,6 +35,11 @@
 #  - Added _place_data_packet_in_frame_buffer() function
 #  - Added _delete_incomplete_frames() function
 # ------------------------------------------------------------------------------
+# ------------------------------------------------------------------------------
+# Modified by Leon Braungardt on 2025-05-17:
+#  - Added frame_period to DCA1000 class and adapt the timeout after which frames
+#       get deleted to it
+# ------------------------------------------------------------------------------
 
 import codecs
 import socket
@@ -103,6 +108,7 @@ class DCA1000:
                  num_rx_ant: int,
                  num_tx_ant: int,
                  num_adc_samples: int,
+                 frame_period,
                  num_bytes_per_sample: int = 2,
                  cmplx_valued: bool = False,
                  static_ip='192.168.33.30', adc_ip='192.168.33.180',
@@ -112,6 +118,8 @@ class DCA1000:
         # self.adc_ip = adc_ip
         # self.data_port = data_port
         # self.config_port = config_port
+
+        self.frame_period_seconds = frame_period / 1000
 
         # Calculate bytes per frame
         self.bytes_in_frame = (num_chirp_loops * num_rx_ant * num_tx_ant * (2 if cmplx_valued else 1) *
@@ -247,14 +255,10 @@ class DCA1000:
         # Configure
         self.data_socket.settimeout(timeout)
 
+        timeout_incomplete_frames = self.frame_period_seconds * 2
+
         # Read packets until a full frame is read
-        while True:
-            # Remove incomplete frames from frame buffer which exceed a timeout
-            dropped_frames = self._delete_incomplete_frames(timeout_seconds=0.2)
-            if dropped_frames:
-                ids = ", ".join(str(f) for f in dropped_frames)
-                print(f"WARNING: Dropped Frame(s) {ids} since they weren't complete.")
-            
+        while True: 
             # Read UDP packet
             packet_num, byte_count, packet_data = self._read_data_packet()
 
@@ -265,6 +269,12 @@ class DCA1000:
             )
 
             if frame_data is not None:
+                # Remove incomplete frames from frame buffer which exceed a timeout
+                dropped_frames = self._delete_incomplete_frames(timeout_seconds=timeout_incomplete_frames)
+                if dropped_frames:
+                    ids = ", ".join(str(f) for f in dropped_frames)
+                    print(f"WARNING: Dropped Frame(s) {ids} since they weren't complete.")
+                # Return the complete frame
                 return frame_data
 
 
