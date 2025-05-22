@@ -49,7 +49,7 @@ from pathlib import Path
 import numpy as np
 import time
 
-from .utils.ADC import DCA1000
+from .utils.adc import DCA1000
 from .utils.radar_cli import RadarCLI
 
 class XWRL6432AdcReader(threading.Thread):
