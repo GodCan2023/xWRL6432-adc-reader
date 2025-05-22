@@ -9,8 +9,8 @@ from queue import Queue
 # Keep imports working although this file is iun subdir of the repo
 import sys, pathlib
 sys.path.append(str(pathlib.Path(__file__).resolve().parent.parent))
-from xwrl6432_adc_reader import XWRL6432AdcReader
-from xwrl6432_adc_reader.utils import ADCRecorder
+from xwrl6432_adc_reader.xwrl6432_adc_reader import XWRL6432AdcReader
+from xwrl6432_adc_reader.utils.adc_recorder import ADCRecorder
 
 
 # Create the queue which the reader will write the ADC data into
@@ -19,7 +19,7 @@ data_queue = Queue()
 # Create xWRL6432AdcReader instance
 adc_reader = XWRL6432AdcReader(
     radar_serial_port="/dev/ttyACM1", # serial port to mmWave CLI (COM-port in Windows)
-    radar_cfg_path="../radar_config/iwrl6432.cfg", # path to radar EVM config file
+    radar_cfg_path="radar_config/iwrl6432.cfg", # path to radar EVM config file
     out_queue=data_queue
 )
 
@@ -37,7 +37,7 @@ try:
     adc_recorder.wait_for_completion()
     # Export the recorded data to a .npz file
     adc_recorder.save_to_npz(
-        file_path="frame_dump.npz", 
+        file_path="examples/frame_dump.npz", 
         config_metadata=adc_reader.get_radar_config()
     )
 except KeyboardInterrupt:
