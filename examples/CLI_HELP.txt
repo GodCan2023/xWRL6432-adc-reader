@@ -1,0 +1,25 @@
+channelCfg: <RxChCtrlBitMask> <TxChCtrlBitMask> <MiscCtrl>
+
+chirpComnCfg: <DigOutputSampRate_Decim> <DigOutputBitsSel> <DfeFirSel> <NumOfAdcSamples> <ChirpTxMimoPatSel> <ChirpRampEndTime> <ChirpRxHpfSel>
+
+chirpTimingCfg: <ChirpIdleTime> <ChirpAdcSkipSamples> <ChirpTxStartTime> <ChirpRfFreqSlope> <ChirpRfFreqStart>
+
+frameCfg: <NumOfChirpsInBurst> <NumOfChirpsAccum> <BurstPeriodicity> <NumOfBurstsInFrame> <FramePeriodicity> <NumOfFrames>
+
+guiMonitor: <pointCloud> <rangeProfile> <noiseProfile> <rangeAzimuthHeatMap> <rangeDopplerHeatMap> <statsInfo> <presenceInfo> <adcSamples> <trackerInfo> <microDopplerInfo> <classifierInfo> <quickEvalInfo>
+
+sigProcChainCfg: <azimuthFftSize> <elevationFftSize> <motDetMode> <coherentDoppler> <numFrmPerMinorMotProc> <numMinorMotionChirpsPerFrame> <forceMinorMotionVelocityToZero> <minorMotionVelocityInclusionThr>
+
+cfarCfg: <procDirection> <averageMode> <winLen> <guardLen> <noiseDiv> <cyclicMode> <thresholdScale> <peakGroupingEn>
+
+aoaFovCfg: <minAzimuthDeg> <maxAzimuthDeg> <minElevationDeg> <maxElevationDeg>
+
+rangeSelCfg: <minMeters> <maxMeters>
+
+clutterRemoval: <0-disable, 1-enable>
+
+compRangeBiasAndRxChanPhase: <rangeBias> <Re00> <Im00> <Re01> <Im01> <Re02> <Im02> <Re03> <Im03> <Re04> <Im04> <Re05> <Im05> 
+
+adcDataSource: <0-DFP, 1-File> <fileName>
+
+adcLogging: <0-disable, 1-enableDCA, 2-enableSPI> <sideBandEnable> <swizzlingMode> <scramblerMode> <laneRate>
